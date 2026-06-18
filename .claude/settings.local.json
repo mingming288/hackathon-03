@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(python -c ' *)",
+      "Bash(curl -s http://127.0.0.1:8766/api/health)",
+      "Read(//tmp/**)",
+      "Bash(time curl *)",
+      "Bash(python *)",
+      "Bash(curl -s http://127.0.0.1:5173/api/health -w \"\\\\nHTTP %{http_code}\\\\n\")",
+      "Bash(curl -s http://127.0.0.1:5174/api/health -w \"\\\\nHTTP %{http_code}\\\\n\")",
+      "Bash(curl -s http://127.0.0.1:5174/ -o /dev/null -w \"首页 HTTP %{http_code}\\\\n\")",
+      "Bash(curl -s \"http://127.0.0.1:5174/outputs/poster_1781748603.png\" -o /dev/null -w \"HTTP %{http_code} | 大小 %{size_download}B\\\\n\")",
+      "Bash(npx tsc *)",
+      "Bash(git init *)",
+      "Bash(echo 'node_modules/ *)",
+      "Bash(git add *)"
+    ]
+  }
+}
