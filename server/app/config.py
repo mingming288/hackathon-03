@@ -20,15 +20,14 @@ class Settings(BaseSettings):
     )
 
     # ── 文本 LLM（DeepSeek）──
-    deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
+    deepseek_api_key: str = Field(default="sk-7cb5b43eff0d4ebfac8dc8b0603c06a8", alias="DEEPSEEK_API_KEY")
     deepseek_base_url: str = Field(default="https://api.deepseek.com", alias="DEEPSEEK_BASE_URL")
     deepseek_model: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
 
     # ── 生图（gpt-image-2 via llmgateway 中转）──
-    image_api_key: str = Field(default="", alias="IMAGE_API_KEY")
+    image_api_key: str = Field(default="sk-9d7e08435c82659c8ac1dc5f9ee2ec57fc63a6d29e5c78480a67e7bf66061b39", alias="IMAGE_API_KEY")
     image_base_url: str = Field(default="https://www.llmgateway.cn", alias="IMAGE_BASE_URL")
     image_model: str = Field(default="gpt-image-2", alias="IMAGE_MODEL")
-    # Task 0 实测后由用户/部署补全；默认尝试 /v1/images/generations
     image_path: str = Field(default="/v1/images/generations", alias="IMAGE_PATH")
 
     # ── Supabase ──
@@ -38,11 +37,11 @@ class Settings(BaseSettings):
     supabase_bucket: str = Field(default="posters", alias="SUPABASE_BUCKET")
 
     # ── 阿里云 OSS ──
-    oss_access_key_id: str = Field(default="", alias="OSS_ACCESS_KEY_ID")
-    oss_access_key_secret: str = Field(default="", alias="OSS_ACCESS_KEY_SECRET")
-    oss_bucket_name: str = Field(default="", alias="OSS_BUCKET_NAME")
-    oss_endpoint: str = Field(default="", alias="OSS_ENDPOINT")
-    oss_region: str = Field(default="", alias="OSS_REGION")
+    oss_access_key_id: str = Field(default="LTAI5t8EnUb3DRTZD7zz7dwF", alias="OSS_ACCESS_KEY_ID")
+    oss_access_key_secret: str = Field(default="1lbgfaojbDKrYumfbKqk8rGRo8Uevw", alias="OSS_ACCESS_KEY_SECRET")
+    oss_bucket_name: str = Field(default="image22222", alias="OSS_BUCKET_NAME")
+    oss_endpoint: str = Field(default="https://oss-cn-beijing.aliyuncs.com", alias="OSS_ENDPOINT")
+    oss_region: str = Field(default="cn-beijing", alias="OSS_REGION")
 
     # ── 图片编辑失败策略 ──
     # strict: 生产高保真模式，失败就报错（IMAGE_REFERENCE_LOST）
