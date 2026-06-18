@@ -13,9 +13,10 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import DBError, PosterDB
@@ -34,6 +35,9 @@ settings = get_settings()
 # ── 静态测试页面 ──
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
+# ── 前端构建产物目录（Render 部署时由 buildCommand 复制） ──
+DIST_DIR = Path(__file__).resolve().parent.parent / "static" / "dist"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -45,11 +49,37 @@ app.add_middleware(
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    """返回 Web 测试页面。"""
+    """返回 Web 测试页面（优先前端 dist，否则回退 static）。"""
+    # 优先返回前端构建产物
+    dist_index = DIST_DIR / "index.html"
+    if dist_index.exists():
+        return dist_index.read_text(encoding="utf-8")
+    # 回退到 static 测试页面
     html_path = STATIC_DIR / "index.html"
     if html_path.exists():
         return html_path.read_text(encoding="utf-8")
     return "<h1>static/index.html not found</h1>"
+
+
+# ── 挂载前端静态文件（dist/assets、图片等） ──
+if DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="frontend-assets")
+
+    @app.get("/{full_path:path}", response_class=HTMLResponse)
+    async def serve_frontend(request: Request, full_path: str):
+        """SPA catch-all：非 /api/ 和 /outputs/ 的请求都返回 index.html。"""
+        # 不拦截 API 和 outputs 路由
+        if full_path.startswith("api/") or full_path.startswith("outputs/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        # 尝试返回 dist 中的静态文件
+        file_path = DIST_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        # 兜底返回 index.html（SPA 路由）
+        index_html = DIST_DIR / "index.html"
+        if index_html.exists():
+            return index_html.read_text(encoding="utf-8")
+        return "<h1>Frontend not built</h1>"
 
 
 @app.get("/outputs/{filename}")

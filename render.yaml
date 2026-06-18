@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: origin-daily
+    runtime: python
+    buildCommand: cd server && pip install -r requirements.txt && cd .. && npm install && npm run build && cp -r dist server/static/dist
+    startCommand: cd server && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+      - key: IMAGE_API_KEY
+        sync: false
+      - key: IMAGE_BASE_URL
+        value: https://www.llmgateway.cn
+      - key: IMAGE_MODEL
+        value: gpt-image-2
+      - key: IMAGE_PATH
+        value: /v1/images/generations
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: posters
+      - key: ENV
+        value: production
+      - key: CORS_ORIGINS
+        value: "*"
