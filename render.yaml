@@ -19,14 +19,16 @@ services:
         value: gpt-image-2
       - key: IMAGE_PATH
         value: /v1/images/generations
-      - key: SUPABASE_URL
+      - key: OSS_ACCESS_KEY_ID
         sync: false
-      - key: SUPABASE_SERVICE_KEY
+      - key: OSS_ACCESS_KEY_SECRET
         sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false
-      - key: SUPABASE_BUCKET
-        value: posters
+      - key: OSS_BUCKET_NAME
+        value: image22222
+      - key: OSS_ENDPOINT
+        value: https://oss-cn-beijing.aliyuncs.com
+      - key: OSS_REGION
+        value: cn-beijing
       - key: ENV
         value: production
       - key: CORS_ORIGINS

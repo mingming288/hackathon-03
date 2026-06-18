@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     supabase_anon_key: str = Field(default="", alias="SUPABASE_ANON_KEY")
     supabase_bucket: str = Field(default="posters", alias="SUPABASE_BUCKET")
 
+    # ── 阿里云 OSS ──
+    oss_access_key_id: str = Field(default="", alias="OSS_ACCESS_KEY_ID")
+    oss_access_key_secret: str = Field(default="", alias="OSS_ACCESS_KEY_SECRET")
+    oss_bucket_name: str = Field(default="", alias="OSS_BUCKET_NAME")
+    oss_endpoint: str = Field(default="", alias="OSS_ENDPOINT")
+    oss_region: str = Field(default="", alias="OSS_REGION")
+
     # ── 图片编辑失败策略 ──
     # strict: 生产高保真模式，失败就报错（IMAGE_REFERENCE_LOST）
     # degrade_without_user_image: 不使用用户照片，生成通用配图（需告知用户）
@@ -79,6 +86,10 @@ class Settings(BaseSettings):
     @property
     def supabase_ready(self) -> bool:
         return bool(self.supabase_url and self.supabase_service_key)
+
+    @property
+    def oss_ready(self) -> bool:
+        return bool(self.oss_access_key_id and self.oss_access_key_secret and self.oss_bucket_name)
 
 
 @lru_cache
