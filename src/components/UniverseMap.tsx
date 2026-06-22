@@ -3,6 +3,7 @@ import type { AppContextValue } from "../App";
 import { playPlanetChime } from "../audio";
 import type { Relation, User, Project } from "../types";
 import { NewspaperPoster } from "./NewspaperPoster";
+import { getUserRelations, getRecommendedUsers, createRecommendedRelation } from "../relationUtils";
 
 type Filters = { track: string; role: string; skill: string; relation: string; q: string };
 
@@ -13,12 +14,26 @@ export function UniverseMap({ app }: { app: AppContextValue }) {
   const [filters, setFilters] = useState<Filters>({ track: "全部", role: "全部", skill: "全部", relation: "全部", q: "" });
   const [isFocused, setIsFocused] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, camX: 0, camY: 0 });
 
   const users = app.data.users;
   const active = activeUser ? app.data.users.find((u) => u.user_id === activeUser) : null;
   const activeNewspaper = active ? app.data.newspapers.find(n => n.userId === active.user_id) || app.data.newspapers[0] : null;
   const activeProject = active ? app.data.projects.find(p => p.memberIds.includes(active.user_id)) : undefined;
+
+  // 获取活跃用户的关系（按权重排序）
+  const activeRelations = useMemo(() => {
+    if (!activeUser) return [];
+    return getUserRelations(app.data.relations, activeUser);
+  }, [activeUser, app.data.relations]);
+
+  // 获取推荐认识的用户
+  const recommendedUsers = useMemo(() => {
+    if (!active) return [];
+    return getRecommendedUsers(active, users, app.data.relations, 3);
+  }, [active, users, app.data.relations]);
 
   // Derive filter options
   const tracks = ["全部", "AI", "社区", "视觉", "AI 互动装置", "社交图谱", "黑客松工具", "其他"];
@@ -38,6 +53,26 @@ export function UniverseMap({ app }: { app: AppContextValue }) {
   }, [users, app.data.projects, filters]);
 
   const hasActiveFilters = filters.role !== "全部" || filters.skill !== "全部" || filters.track !== "全部" || filters.q !== "";
+
+  // 搜索结果（实时搜索）
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const query = searchQuery.toLowerCase().trim();
+    return users
+      .filter(user => {
+        const projects = app.data.projects.filter(p => user.projectIds.includes(p.project_id));
+        const text = [
+          user.name,
+          user.role,
+          user.bio,
+          ...user.skills,
+          ...projects.map(p => p.name),
+          ...projects.map(p => p.oneSentence),
+        ].join(" ").toLowerCase();
+        return text.includes(query);
+      })
+      .slice(0, 8); // 最多显示 8 条结果
+  }, [users, app.data.projects, searchQuery]);
 
   // Connected users for the active star
   const connectedUserIds = useMemo(() => {
@@ -62,10 +97,38 @@ export function UniverseMap({ app }: { app: AppContextValue }) {
     setActiveRelation(null);
     setIsFocused(true);
     setView({ x: -user.position.x, y: -user.position.y, z: -user.position.z + 500 });
-    
+
     // Play Wind Chime Sound based on star properties
     const note = 261.63 * Math.pow(1.059463, (user.starBrightness % 12));
     playPlanetChime(note, app.data.settings.volume, app.data.settings.soundEnabled);
+  }
+
+  function handleCreateRecommend(targetUserId: string) {
+    if (!active) return;
+    const targetUser = users.find((u) => u.user_id === targetUserId);
+    if (!targetUser) return;
+
+    createRecommendedRelation(active, targetUser, app.data.relations);
+    app.refresh();
+  }
+
+  function handleSearchSelect(userId: string) {
+    const user = users.find((u) => u.user_id === userId);
+    if (user) {
+      focusUser(user);
+      setSearchQuery("");
+      setShowSearch(false);
+    }
+  }
+
+  function handleSearchKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") {
+      setSearchQuery("");
+      setShowSearch(false);
+    }
+    if (e.key === "Enter" && searchResults.length > 0) {
+      handleSearchSelect(searchResults[0].user_id);
+    }
   }
 
   function handlePointerDown(e: React.PointerEvent) {
@@ -203,6 +266,55 @@ export function UniverseMap({ app }: { app: AppContextValue }) {
 
   return (
     <div className={`universe-app ${isFocused ? 'focus-mode' : ''}`} style={{ height: "calc(100vh - 120px)", position: "relative" }}>
+      {/* Search Bar */}
+      <div className={`u-search-container ${showSearch ? 'active' : ''}`}>
+        <div className="u-search-bar">
+          <span className="u-search-icon">🔍</span>
+          <input
+            className="u-search-input"
+            placeholder="搜索恒星 / 项目 / 技能..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setShowSearch(true);
+            }}
+            onFocus={() => setShowSearch(true)}
+            onKeyDown={handleSearchKeyDown}
+          />
+          {searchQuery && (
+            <button className="u-search-clear" onClick={() => { setSearchQuery(""); setShowSearch(false); }}>
+              ×
+            </button>
+          )}
+        </div>
+
+        {/* Search Results Dropdown */}
+        {showSearch && searchQuery && (
+          <div className="u-search-results">
+            {searchResults.length > 0 ? (
+              searchResults.map((user) => (
+                <div
+                  key={user.user_id}
+                  className="u-search-result-item"
+                  onClick={() => handleSearchSelect(user.user_id)}
+                >
+                  <div className="u-search-result-avatar">{user.name.charAt(0)}</div>
+                  <div className="u-search-result-info">
+                    <span className="u-search-result-name">{user.name}</span>
+                    <span className="u-search-result-meta">{user.role} · {user.skills.slice(0, 2).join(", ")}</span>
+                  </div>
+                  <span className="u-search-result-arrow">→</span>
+                </div>
+              ))
+            ) : (
+              <div className="u-search-no-result">
+                <span>未找到匹配的恒星</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Dropdown Filter Panel */}
       {showFilters && (
         <div className="u-filter-dropdown">
@@ -298,6 +410,37 @@ export function UniverseMap({ app }: { app: AppContextValue }) {
                 <p className="p-empty">暂无作品记录</p>
               )}
             </div>
+
+            <div className="p-section">
+              <h3>星链关系</h3>
+              <div className="p-relations">
+                {activeRelations.slice(0, 5).map((rel) => (
+                  <div key={rel.relation_id} className="p-relation-item" onClick={() => setActiveRelation(rel)}>
+                    <span className="p-relation-dot" style={{ background: rel.relationColor }} />
+                    <span className="p-relation-title">{rel.relationTitle}</span>
+                    <span className="p-relation-weight">权重 {rel.weight}</span>
+                  </div>
+                ))}
+                {activeRelations.length === 0 && <p className="p-empty">暂无星链</p>}
+              </div>
+            </div>
+
+            {recommendedUsers.length > 0 && (
+              <div className="p-section">
+                <h3>推荐认识</h3>
+                <div className="p-recommended">
+                  {recommendedUsers.map((u) => (
+                    <div key={u.user_id} className="p-recommended-item">
+                      <div className="p-avatar small">{u.name.charAt(0)}</div>
+                      <span>{u.name}</span>
+                      <button className="u-btn tiny" onClick={() => handleCreateRecommend(u.user_id)}>
+                        +
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="p-section">
               <h3>宇宙名片</h3>

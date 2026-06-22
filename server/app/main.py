@@ -20,17 +20,73 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import DBError, PosterDB
+from .logging_config import setup_logging, get_logger
+from .cache import get_image_cache
 from .models import GenerateResponse, PosterListItem
 from .orchestrator import run_pipeline
 from .storage import PosterStorage, StorageError
 from .styles import list_styles, style_to_public_dict
+from .upload_helpers import validate_and_save_image, validate_and_save_qr_code, save_local_image
+from .rate_limit import RateLimitMiddleware
+from .security import SecurityHeadersMiddleware
+from .websocket import get_manager
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+app = FastAPI(
+    title="Poster Director Agent",
+    version="0.1.0",
+    description="""
+## AI 驱动的中文报纸风格海报生成器
 
-app = FastAPI(title="Poster Director Agent", version="0.1.0")
+输入项目 PRD + 0-3 张照片 + 6 种风格之一，自动生成一张中文报纸头版图片。
+
+### 功能特性
+
+- 🎨 **6 种报纸风格**：经典日报、未来赛博、娱乐头条、3D人物、漫画分镜、魔法学院
+- 📝 **智能文案生成**：基于 DeepSeek 自动生成新闻风格文案
+- 🖼️ **AI 生图**：使用 gpt-image-2 生成高质量报纸海报
+- 📱 **双模式支持**：选手模式（基于PRD）和观众模式（基于现场体验）
+- 💾 **云端存储**：Supabase 数据库 + Storage 持久化
+
+### 错误码说明
+
+| 错误码 | 说明 |
+|--------|------|
+| `IMAGE_GENERATION_FAILED` | 图像生成失败 |
+| `IMAGE_REFERENCE_LOST` | 参考图丢失 |
+| `COPY_GENERATION_FAILED` | 文案生成失败 |
+| `DATABASE_ERROR` | 数据库操作失败 |
+
+### 限流说明
+
+生产环境限制：每分钟最多 10 次请求（可通过环境变量配置）。
+    """,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+    openapi_tags=[
+        {
+            "name": "生成",
+            "description": "海报生成相关接口",
+        },
+        {
+            "name": "查询",
+            "description": "海报历史查询接口",
+        },
+        {
+            "name": "系统",
+            "description": "系统状态和配置接口",
+        },
+    ],
+)
 
 settings = get_settings()
+
+# 配置结构化日志
+setup_logging(
+    level=settings.log_level,
+    json_output=settings.env == "production",
+)
+logger = get_logger(__name__)
 
 # ── 静态测试页面 ──
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -45,6 +101,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 限流中间件（生产环境：每分钟最多 10 次请求）
+if settings.env == "production":
+    app.add_middleware(
+        RateLimitMiddleware,
+        max_requests=settings.rate_limit_max_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
+
+# 安全头中间件（生产环境）
+if settings.env == "production":
+    app.add_middleware(SecurityHeadersMiddleware)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -115,9 +183,56 @@ async def get_styles() -> dict:
     }
 
 
+@app.get("/api/cache/stats")
+async def cache_stats() -> dict:
+    """返回图片缓存统计信息。"""
+    cache = get_image_cache()
+    return {
+        "status": "ok",
+        "cache": cache.stats,
+    }
+
+
+@app.post("/api/cache/clear")
+async def clear_cache() -> dict:
+    """清空图片缓存。"""
+    cache = get_image_cache()
+    cleared = cache.clear()
+    return {
+        "status": "ok",
+        "cleared_count": cleared,
+    }
+
+
+@app.websocket("/ws/generate/{client_id}")
+async def websocket_generate(websocket: WebSocket, client_id: str):
+    """WebSocket 端点：实时推送生成进度。
+
+    连接后，客户端会收到各阶段的进度更新：
+    - init: 初始化
+    - parsing: 解析 PRD
+    - copywriting: 生成文案
+    - image_generating: 生成图片
+    - completed: 完成
+    - failed: 失败
+    """
+    manager = get_manager()
+    await manager.connect(websocket, client_id)
+
+    try:
+        while True:
+            # 保持连接，等待客户端消息或断开
+            data = await websocket.receive_text()
+            # 客户端可以发送 ping 保持连接
+            if data == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+    except WebSocketDisconnect:
+        manager.disconnect(client_id)
+
+
 @app.post("/api/generate-poster")
 async def generate_poster(
-    prd: str = Form("", description="项目 PRD / 描述（选手模式必填，观众模式可省略）"),
+    prd: str = Form("", description="项目 PRD / 描述（选手模式必填，观众模式可省略）", max_length=5000),
     style: str = Form(..., description="daily/cyber/entertainment/character3d/comic/magic"),
     project_name: str = Form(""),
     team_name: str = Form(""),
@@ -139,6 +254,7 @@ async def generate_poster(
     # 校验：选手模式必须有 PRD
     if mode != "audience" and not prd:
         raise HTTPException(status_code=400, detail="选手模式必须提供项目描述或 PRD")
+
     # 限制图片 0-3 张
     image_files = [img for img in images if img.filename]
     if len(image_files) > 3:
@@ -153,70 +269,28 @@ async def generate_poster(
             raise HTTPException(status_code=400, detail="options 不是合法 JSON")
     eff_event = event_name or extra.get("event_name", "")
 
-    # 保存用户上传图片为临时文件，供 /images/edits 使用
-    # 含安全校验：MIME、大小、Pillow 解码、去 EXIF、UUID 文件名
+    # 保存用户上传图片（使用辅助函数）
     image_count = len(image_files)
     user_image_paths: list[str] = []
     if image_files:
         uploads_dir = STATIC_DIR.parent / "uploads"
         uploads_dir.mkdir(exist_ok=True)
         for img in image_files:
-            raw = await img.read()
-            # 1. 大小校验
-            if len(raw) > settings.image_max_size_mb * 1024 * 1024:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"图片 {img.filename} 超过 {settings.image_max_size_mb}MB 限制",
-                )
-            # 2. MIME 校验
-            mime = img.content_type or ""
-            if mime not in settings.image_allowed_mime_list:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"不支持的图片格式 {mime}，仅允许 {', '.join(settings.image_allowed_mime_list)}",
-                )
-            # 3. Pillow 解码 + 去 EXIF + 尺寸校验
-            try:
-                from PIL import Image as PILImage
-                pil_img = PILImage.open(BytesIO(raw))
-                # 去 EXIF（GPS/设备信息）
-                data = list(pil_img.getdata())
-                pil_img_no_exif = PILImage.new(pil_img.mode, pil_img.size)
-                pil_img_no_exif.putdata(data)
-                # 尺寸校验
-                w, h = pil_img_no_exif.size
-                if max(w, h) > settings.image_max_dimension:
-                    ratio = settings.image_max_dimension / max(w, h)
-                    new_size = (int(w * ratio), int(h * ratio))
-                    pil_img_no_exif = pil_img_no_exif.resize(new_size, PILImage.LANCZOS)
-                    logger.info("图片缩放: %dx%d → %dx%d", w, h, *new_size)
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=400, detail=f"图片解码失败: {exc}"
-                ) from exc
-            # 4. UUID 文件名（防路径穿越和重名）
-            ext_map = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
-            ext = ext_map.get(mime, "png")
-            fname = f"{uuid.uuid4().hex}.{ext}"
-            fpath = uploads_dir / fname
-            # 保存去 EXIF 后的图片
-            save_buf = BytesIO()
-            pil_img_no_exif.save(save_buf, format="PNG")
-            fpath.write_bytes(save_buf.getvalue())
-            user_image_paths.append(str(fpath))
-            logger.info("保存用户图片(安全校验通过): %s", fpath)
+            path = await validate_and_save_image(
+                img,
+                max_size_mb=settings.image_max_size_mb,
+                allowed_mimes=settings.image_allowed_mime_list,
+                max_dimension=settings.image_max_dimension,
+                uploads_dir=uploads_dir,
+            )
+            user_image_paths.append(path)
 
-    # 保存二维码图片（UUID 文件名）
+    # 保存二维码图片（使用辅助函数）
     qr_code_path: str | None = None
     if qr_code and qr_code.filename:
         uploads_dir = STATIC_DIR.parent / "uploads"
         uploads_dir.mkdir(exist_ok=True)
-        qr_ext = Path(qr_code.filename).suffix.lstrip(".") or "png"
-        qr_fname = f"qr_{uuid.uuid4().hex}.{qr_ext}"
-        qr_fpath = uploads_dir / qr_fname
-        qr_fpath.write_bytes(await qr_code.read())
-        qr_code_path = str(qr_fpath)
-        logger.info("保存二维码图片: %s", qr_fpath)
+        qr_code_path = await validate_and_save_qr_code(qr_code, uploads_dir=uploads_dir)
 
     # 跑工作流
     try:
@@ -245,19 +319,10 @@ async def generate_poster(
     image_url = ""
     storage_path = None
     poster_id = None
-    local_filename = None
 
     if orch.image_bytes:
         # 先存一份到本地 outputs（无论 Supabase 是否可用都有保底）
-        try:
-            outputs_dir = STATIC_DIR.parent / "outputs"
-            outputs_dir.mkdir(exist_ok=True)
-            local_filename = f"poster_{int(time.time())}.png"
-            local_path = outputs_dir / local_filename
-            local_path.write_bytes(orch.image_bytes)
-            logger.info("图片已存本地: %s", local_path)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("本地保存图片失败: %s", exc)
+        local_filename = await save_local_image(orch.image_bytes, STATIC_DIR.parent / "outputs")
 
         # 尝试上传到 Supabase Storage
         try:

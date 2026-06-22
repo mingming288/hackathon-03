@@ -3,14 +3,20 @@ import type { AppData, AppSettings, Newspaper, Project, Relation, User } from ".
 
 const KEY = "origin-daily-universe-data-v1";
 
-export function loadData(): AppData {
-  const raw = localStorage.getItem(KEY);
-  if (!raw) return structuredClone(initialData);
+/** 安全读取 localStorage，解析失败时返回默认值 */
+function safeGetStorage<T>(key: string, defaultValue: T): T {
+  const raw = localStorage.getItem(key);
+  if (!raw) return defaultValue;
   try {
-    return { ...structuredClone(initialData), ...JSON.parse(raw) };
+    return JSON.parse(raw) as T;
   } catch {
-    return structuredClone(initialData);
+    return defaultValue;
   }
+}
+
+export function loadData(): AppData {
+  const data = safeGetStorage<Partial<AppData>>(KEY, {});
+  return { ...structuredClone(initialData), ...data };
 }
 
 export function saveData(data: AppData) {
@@ -28,18 +34,13 @@ const MIGRATION_KEY = "origin-daily-publish-migration-v1";
 
 export function runPublishMigration() {
   if (localStorage.getItem(MIGRATION_KEY)) return;
-  const raw = localStorage.getItem(KEY);
-  if (raw) {
-    try {
-      const data = JSON.parse(raw) as Partial<AppData>;
-      if (Array.isArray(data.newspapers)) {
-        data.newspapers = data.newspapers.map((paper) => ({ ...paper, published: true }));
-        localStorage.setItem(KEY, JSON.stringify(data));
-      }
-    } catch {
-      // 解析失败则跳过,不阻塞启动
-    }
+
+  const data = safeGetStorage<Partial<AppData>>(KEY, {});
+  if (Array.isArray(data.newspapers)) {
+    data.newspapers = data.newspapers.map((paper) => ({ ...paper, published: true }));
+    localStorage.setItem(KEY, JSON.stringify(data));
   }
+
   localStorage.setItem(MIGRATION_KEY, "done");
 }
 
@@ -75,21 +76,12 @@ export function updateSettings(settings: AppSettings) {
 const AUDIENCE_KEY = "origin-daily-audience-papers-v1";
 
 export function saveAudiencePaper(newspaper: Newspaper) {
-  let list: Newspaper[] = [];
-  try {
-    list = JSON.parse(localStorage.getItem(AUDIENCE_KEY) ?? "[]");
-  } catch {
-    list = [];
-  }
+  const list = safeGetStorage<Newspaper[]>(AUDIENCE_KEY, []);
   const next = [newspaper, ...list.filter((p) => p.newspaper_id !== newspaper.newspaper_id)];
   localStorage.setItem(AUDIENCE_KEY, JSON.stringify(next));
 }
 
 export function getAudiencePaper(id: string): Newspaper | undefined {
-  try {
-    const list: Newspaper[] = JSON.parse(localStorage.getItem(AUDIENCE_KEY) ?? "[]");
-    return list.find((p) => p.newspaper_id === id);
-  } catch {
-    return undefined;
-  }
+  const list = safeGetStorage<Newspaper[]>(AUDIENCE_KEY, []);
+  return list.find((p) => p.newspaper_id === id);
 }

@@ -20,28 +20,25 @@ class Settings(BaseSettings):
     )
 
     # ── 文本 LLM（DeepSeek）──
-    deepseek_api_key: str = Field(default="sk-7cb5b43eff0d4ebfac8dc8b0603c06a8", alias="DEEPSEEK_API_KEY")
+    deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
     deepseek_base_url: str = Field(default="https://api.deepseek.com", alias="DEEPSEEK_BASE_URL")
     deepseek_model: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
+    deepseek_timeout: float = Field(default=60.0, alias="DEEPSEEK_TIMEOUT")
+    deepseek_max_retries: int = Field(default=2, alias="DEEPSEEK_MAX_RETRIES")
 
     # ── 生图（gpt-image-2 via llmgateway 中转）──
-    image_api_key: str = Field(default="sk-9d7e08435c82659c8ac1dc5f9ee2ec57fc63a6d29e5c78480a67e7bf66061b39", alias="IMAGE_API_KEY")
+    image_api_key: str = Field(default="", alias="IMAGE_API_KEY")
     image_base_url: str = Field(default="https://www.llmgateway.cn", alias="IMAGE_BASE_URL")
     image_model: str = Field(default="gpt-image-2", alias="IMAGE_MODEL")
     image_path: str = Field(default="/v1/images/generations", alias="IMAGE_PATH")
+    image_timeout: float = Field(default=180.0, alias="IMAGE_TIMEOUT")
+    image_max_retries: int = Field(default=2, alias="IMAGE_MAX_RETRIES")
 
-    # ── Supabase ──
+    # ── Supabase（主数据库 + 存储）──
     supabase_url: str = Field(default="", alias="SUPABASE_URL")
     supabase_service_key: str = Field(default="", alias="SUPABASE_SERVICE_KEY")
     supabase_anon_key: str = Field(default="", alias="SUPABASE_ANON_KEY")
     supabase_bucket: str = Field(default="posters", alias="SUPABASE_BUCKET")
-
-    # ── 阿里云 OSS ──
-    oss_access_key_id: str = Field(default="LTAI5t8EnUb3DRTZD7zz7dwF", alias="OSS_ACCESS_KEY_ID")
-    oss_access_key_secret: str = Field(default="1lbgfaojbDKrYumfbKqk8rGRo8Uevw", alias="OSS_ACCESS_KEY_SECRET")
-    oss_bucket_name: str = Field(default="image22222", alias="OSS_BUCKET_NAME")
-    oss_endpoint: str = Field(default="https://oss-cn-beijing.aliyuncs.com", alias="OSS_ENDPOINT")
-    oss_region: str = Field(default="cn-beijing", alias="OSS_REGION")
 
     # ── 图片编辑失败策略 ──
     # strict: 生产高保真模式，失败就报错（IMAGE_REFERENCE_LOST）
@@ -56,6 +53,20 @@ class Settings(BaseSettings):
     image_max_dimension: int = Field(default=4096, alias="IMAGE_MAX_DIMENSION")
     image_allowed_mimes: str = Field(
         default="image/png,image/jpeg,image/webp", alias="IMAGE_ALLOWED_MIMES"
+    )
+
+    # ── 限流配置 ──
+    rate_limit_max_requests: int = Field(default=10, alias="RATE_LIMIT_MAX_REQUESTS")
+    rate_limit_window_seconds: int = Field(default=60, alias="RATE_LIMIT_WINDOW_SECONDS")
+
+    # ── 文件清理配置 ──
+    cleanup_max_age_days: int = Field(default=7, alias="CLEANUP_MAX_AGE_DAYS")
+
+    # ── 日志配置 ──
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_format: str = Field(
+        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        alias="LOG_FORMAT",
     )
 
     # ── 服务 ──
@@ -87,8 +98,9 @@ class Settings(BaseSettings):
         return bool(self.supabase_url and self.supabase_service_key)
 
     @property
-    def oss_ready(self) -> bool:
-        return bool(self.oss_access_key_id and self.oss_access_key_secret and self.oss_bucket_name)
+    def cleanup_max_age_seconds(self) -> int:
+        """清理最大保留时间（秒）。"""
+        return self.cleanup_max_age_days * 24 * 3600
 
 
 @lru_cache

@@ -38,6 +38,25 @@ class LLMClient:
 
     def __init__(self, settings=None) -> None:
         self.s = settings or get_settings()
+        self._http_client: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """获取复用的 httpx 客户端。"""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(
+                    connect=10.0,
+                    read=180.0,
+                    write=10.0,
+                    pool=10.0,
+                ),
+            )
+        return self._http_client
+
+    async def close(self):
+        """关闭 httpx 客户端。"""
+        if self._http_client and not self._http_client.is_closed:
+            await self._http_client.aclose()
 
     # ── 文本：DeepSeek ──
     async def chat_json(
@@ -73,8 +92,8 @@ class LLMClient:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(url, headers=headers, json=payload)
+            client = await self._get_client()
+            resp = await client.post(url, headers=headers, json=payload, timeout=timeout)
         except Exception as exc:  # noqa: BLE001
             # 记忆铁律：catch 必须打印错误
             logger.exception("DeepSeek 请求异常")
@@ -143,11 +162,15 @@ class LLMClient:
             "prompt": prompt,
             "n": 1,
             "size": size,
-            "response_format": "b64_json",
+            "response_format": "url",  # 使用 url 格式避免异步 httpx 大响应体超时
         }
+        logger.info(
+            "生图请求: url=%s model=%s size=%s",
+            url, self.s.image_model, size,
+        )
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(url, headers=headers, json=payload)
+            client = await self._get_client()
+            resp = await client.post(url, headers=headers, json=payload, timeout=timeout)
         except Exception as exc:  # noqa: BLE001
             logger.exception("生图请求异常 generations")
             raise LLMError(f"生图请求异常: {exc}") from exc
@@ -182,32 +205,32 @@ class LLMClient:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                files = []
-                opened = []
-                try:
-                    for i, p in enumerate(reference_paths):
-                        if not os.path.exists(p):
-                            raise LLMError(f"用户照片不存在: {p}")
-                        f = open(p, "rb")  # noqa: SIM115
-                        opened.append(f)
-                        ext = os.path.splitext(p)[1].lstrip(".") or "png"
-                        files.append(("image[]", (f"user_{i}.{ext}", f, f"image/{ext}")))
-                    data = {
-                        "model": self.s.image_model,
-                        "prompt": prompt,
-                        "n": "1",
-                        "size": size,
-                        "response_format": "b64_json",
-                    }
-                    logger.info(
-                        "images/edits 请求: url=%s model=%s size=%s 图片数=%d",
-                        url, self.s.image_model, size, len(reference_paths),
-                    )
-                    resp = await client.post(url, headers=headers, data=data, files=files)
-                finally:
-                    for f in opened:
-                        f.close()
+            client = await self._get_client()
+            files = []
+            opened = []
+            try:
+                for i, p in enumerate(reference_paths):
+                    if not os.path.exists(p):
+                        raise LLMError(f"用户照片不存在: {p}")
+                    f = open(p, "rb")  # noqa: SIM115
+                    opened.append(f)
+                    ext = os.path.splitext(p)[1].lstrip(".") or "png"
+                    files.append(("image[]", (f"user_{i}.{ext}", f, f"image/{ext}")))
+                data = {
+                    "model": self.s.image_model,
+                    "prompt": prompt,
+                    "n": "1",
+                    "size": size,
+                    "response_format": "url",  # 使用 url 格式避免异步 httpx 大响应体超时
+                }
+                logger.info(
+                    "images/edits 请求: url=%s model=%s size=%s 图片数=%d",
+                    url, self.s.image_model, size, len(reference_paths),
+                )
+                resp = await client.post(url, headers=headers, data=data, files=files, timeout=timeout)
+            finally:
+                for f in opened:
+                    f.close()
         except LLMError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -255,7 +278,7 @@ def _parse_image_response(data: dict[str, Any]) -> ImageResult:
 
 
 def _extract_json(content: str) -> dict[str, Any]:
-    """从 LLM 文本中提取 JSON dict（容错：去除 markdown 代码块、截取首尾大括号）。"""
+    """从 LLM 文本中提取 JSON dict（容错：去除 markdown 代码块、截取首尾大括号、修复中文引号）。"""
     text = content.strip()
     # 去除 ```json ... ``` 包裹
     if text.startswith("```"):
@@ -263,6 +286,8 @@ def _extract_json(content: str) -> dict[str, Any]:
         if text.lower().startswith("json"):
             text = text[4:]
         text = text.strip()
+    # 修复中文引号：DeepSeek 常在 JSON 字符串值内输出 "" 导致解析失败
+    text = text.replace('“', '\\"').replace('”', '\\"')
     # 直接解析
     try:
         parsed = json.loads(text)

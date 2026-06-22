@@ -7,6 +7,7 @@ import type { GenerateResponse } from "../api/client";
 import { adaptToEntities } from "../api/adapter";
 import { toBackendStyle } from "../api/styleMap";
 import { playChime } from "../audio";
+import { LoadingSkeleton } from "../components/LoadingSkeleton";
 import type { GenerateInput, TemplateStyle } from "../types";
 
 const templates: TemplateStyle[] = ["复古头版", "未来发布会", "3D 小人风", "JOJO 动漫中二风", "科技星空风", "原点宇宙风"];
@@ -47,6 +48,7 @@ export function Generate({ app }: { app: AppContextValue }) {
 
   const [generatingTextIndex, setGeneratingTextIndex] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
+  const [generatingStage, setGeneratingStage] = useState("准备中...");
   const generatingTexts = [
     "生成中"
   ];
@@ -87,15 +89,25 @@ export function Generate({ app }: { app: AppContextValue }) {
   async function createNewspaper() {
     setAppStage("generating");
     setErrorMsg("");
+    setGeneratingStage("准备中...");
 
     // 生成中文字循环动画
     const interval = setInterval(() => {
       setGeneratingTextIndex(i => (i + 1) % generatingTexts.length);
     }, 600);
 
+    // 超时控制：180 秒
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      setGeneratingStage("请求超时，正在取消...");
+      controller.abort();
+    }, 180000);
+
     try {
       // 真实调用后端 AI 生图 + 文案
-      const resp = await generatePoster(input);
+      setGeneratingStage("正在调用后端 API（约需 60-90 秒）...");
+      const resp = await generatePoster(input, controller.signal);
+      clearTimeout(timeoutId);
       const { user, project, newspaper } = adaptToEntities(resp, input);
       if (input.mode === "audience") {
         // 观众:不进共享图谱(星图/作品集),单独存放
@@ -107,10 +119,24 @@ export function Generate({ app }: { app: AppContextValue }) {
       clearInterval(interval);
       // 跳转结果页
       app.navigate(`/result/${newspaper.newspaper_id}`);
-    } catch (err) {
+    } catch (err: any) {
       clearInterval(interval);
-      console.error("后端生成失败，降级 mockAI 兜底:", err);
+      clearTimeout(timeoutId);
+      console.error("=== 后端生成失败，降级 mockAI 兜底 ===");
+      console.error("错误类型:", err?.name);
+      console.error("错误信息:", err?.message);
+      console.error("完整错误:", err);
+
+      // 显示具体错误信息
+      if (err?.name === "AbortError") {
+        setGeneratingStage("请求超时（180秒），尝试使用本地生成...");
+      } else if (err?.message?.includes("Failed to fetch")) {
+        setGeneratingStage("无法连接到后端服务器，尝试本地生成...");
+      } else {
+        setGeneratingStage(`后端错误: ${err?.message?.slice(0, 50) || "未知错误"}`);
+      }
       // 降级：用 mockAI 生成文案，无真实图片，仍闭环落库以保证演示不中断
+      console.warn("=== 使用 mockAI 降级生成（无真实图片）===");
       try {
         const mock = mockAIGenerateNewspaper(input);
         const fallbackResp: GenerateResponse = {
@@ -254,13 +280,10 @@ export function Generate({ app }: { app: AppContextValue }) {
 
             {appStage === "generating" && (
           <div className="generating-dialog">
-            <p className="generating-status">生成中</p>
-            
-            <div className="generating-progress-container">
-              <div className="generating-progress-bar">
-                <div className="generating-progress-particles" />
-              </div>
-            </div>
+            <LoadingSkeleton stage="image_generating" progress={60} />
+            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "12px", marginTop: "12px" }}>
+              {generatingStage}
+            </p>
           </div>
         )}
           </div>

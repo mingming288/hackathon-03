@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { AppContextValue } from "../App";
+import { LazyImage } from "../components/LazyImage";
 
 type Sort = "最新" | "最热" | "AI 主编推荐" | "最具未来感";
 
@@ -42,7 +43,15 @@ export function Wall({ app }: { app: AppContextValue }) {
           return (
             <article className="wall-paper" key={paper.newspaper_id}>
               <button className={`paper-cover ${paper.imageUrl ? "has-image" : ""}`} onClick={() => app.navigate(`/result/${paper.newspaper_id}`)}>
-                {paper.imageUrl ? <img src={paper.imageUrl} alt={paper.title} /> : <span>原点日报</span>}
+                {paper.imageUrl ? (
+                  <LazyImage
+                    src={paper.imageUrl}
+                    alt={paper.title}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : (
+                  <span>原点日报</span>
+                )}
               </button>
               <div className="split-actions">
                 <button onClick={() => app.navigate(`/result/${paper.newspaper_id}`)}>报纸详情</button>

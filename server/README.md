@@ -66,18 +66,47 @@ python scripts/check_image_api.py
 | IMAGE_API_KEY | llmgateway 中转密钥 | 是 |
 | IMAGE_BASE_URL | 默认 https://www.llmgateway.cn | 否 |
 | IMAGE_MODEL | 默认 gpt-image-2 | 否 |
-| IMAGE_PATH | 默认 /v1/images/generations（Task 0 实测后调整） | 否 |
-| SUPABASE_URL | Supabase 项目 URL | 是(Task4+) |
-| SUPABASE_SERVICE_KEY | service_role key（后端写） | 是(Task4+) |
+| IMAGE_PATH | 默认 /v1/images/generations | 否 |
+| SUPABASE_URL | Supabase 项目 URL | 是 |
+| SUPABASE_SERVICE_KEY | service_role key（后端写） | 是 |
 | SUPABASE_ANON_KEY | anon key（前端读，后端可选） | 否 |
+| SUPABASE_BUCKET | Storage bucket 名称，默认 posters | 否 |
 | PORT | 默认 8766 | 否 |
 | CORS_ORIGINS | 允许的前端来源（逗号分隔） | 否 |
 
-## Supabase 配置（与前端共享）
+## Supabase 配置（主数据库 + 存储）
 
-1. 在 Supabase 项目 SQL Editor 执行 `supabase/migrations/0001_posters_table.sql`
-2. 建表 + RLS 策略：前端 anon key 只能读 `status='success'` 记录，后端 service_role 写
-3. Storage bucket `posters` 设为 public，海报图返回公共 URL
+### 1. 创建 Supabase 项目
+1. 访问 [supabase.com](https://supabase.com) 并登录
+2. 点击 "New Project" 创建新项目
+3. 记录项目 URL 和 API Keys（Settings > API）
+
+### 2. 执行数据库迁移
+在 Supabase Dashboard 的 SQL Editor 中执行：
+```sql
+-- 复制 supabase/migrations/0001_posters_table.sql 的内容并执行
+```
+
+这将创建：
+- `posters` 表（含索引和 RLS 策略）
+- `posters` Storage bucket（公共访问）
+
+### 3. 配置环境变量
+在 `server/.env` 中填写：
+```
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_KEY=your_service_role_key
+SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_BUCKET=posters
+```
+
+### 4. 验证连接
+```bash
+cd server
+python scripts/check_supabase.py
+```
+
+预期输出：✅ 所有检查通过！Supabase 配置正确。
 
 ## API 接口
 

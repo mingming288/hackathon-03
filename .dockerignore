@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+server/__pycache__/
+server/app/__pycache__/
+server/app/**/__pycache__/
+
+# Build outputs
+dist/
+server/static/dist/
+server/outputs/
+server/uploads/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+*.test.js
+*.spec.js
+check_*.js
+test_*.js
+
+# Documentation
+*.md
+*.txt
+
+# Large files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.xmind

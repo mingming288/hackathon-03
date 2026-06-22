@@ -15,7 +15,18 @@
       "Bash(npx tsc *)",
       "Bash(git init *)",
       "Bash(echo 'node_modules/ *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(pip install *)",
+      "Bash(curl -s -X POST http://127.0.0.1:8766/api/generate-poster -F prd=测试项目 -F style=daily -F project_name=测试作品 -F user_name=test)",
+      "Bash(curl -s -X POST http://127.0.0.1:8766/api/generate-poster -F prd=测试项目 -F style=daily -F project_name=测试作品 -F mode=participant -F user_ref=test -F event_name=黑客松)",
+      "Bash(curl -s -I \"https://image22222.oss-cn-beijing.aliyuncs.com/2026/06/6438dbe714474827900a4bca1d44e6ae.png\")",
+      "Bash(git checkout *)",
+      "Bash(curl -s http://localhost:8766/api/health)",
+      "Bash(curl -X POST http://localhost:8766/api/generate-poster -F prd=我们开发了一个AI驱动的代码助手，帮助开发者提高编程效率10倍 -F style=daily -F 'project_name=CodeMaster AI' -F mode=participant)",
+      "Bash(git commit *)"
     ]
   }
 }

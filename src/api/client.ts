@@ -77,19 +77,28 @@ export async function generatePoster(
     }
   }
 
+  console.log("[API] 开始调用后端生图...", { mode, style: toBackendStyle(input.templateStyle) });
+  const startTime = Date.now();
+
   const resp = await fetch(`${API_BASE}/api/generate-poster`, {
     method: "POST",
     body: form,
     signal,
   });
 
+  console.log(`[API] 后端响应: HTTP ${resp.status}, 耗时 ${(Date.now() - startTime) / 1000}s`);
+
   if (!resp.ok) {
     const detail = await resp.text().catch(() => "");
+    console.error("[API] 请求失败:", resp.status, detail);
     throw new Error(`生成失败 HTTP ${resp.status}: ${detail.slice(0, 200)}`);
   }
 
   const data = (await resp.json()) as GenerateResponse;
+  console.log("[API] 返回数据:", { status: data.status, image_url: data.image_url?.slice(0, 80), error: data.error });
+
   if (data.status === "failed") {
+    console.error("[API] 后端返回失败:", data.error, data.error_code);
     throw new Error(data.error || "后端生成失败");
   }
   return data;
