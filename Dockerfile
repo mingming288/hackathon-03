@@ -48,9 +48,6 @@ WORKDIR /app/server
 # Expose default port
 EXPOSE 8766
 
-# Health check (使用 $PORT 环境变量)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8766}/api/health || exit 1
-
-# Run the application (使用 Render 分配的 $PORT)
-CMD sh -c "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8766}"
+# Run the application (使用 Render 分配的 $PORT 环境变量)
+ENV PORT=8766
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT
