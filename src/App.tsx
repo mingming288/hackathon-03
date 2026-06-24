@@ -10,7 +10,8 @@ import { Result } from "./routes/Result";
 import { Settings } from "./routes/Settings";
 import { Universe } from "./routes/Universe";
 import { Wall } from "./routes/Wall";
-import { loadData } from "./storage";
+import { loadData, loadDataAsync } from "./storage";
+import { seedDatabase } from "./lib/seed";
 import type { AppData } from "./types";
 
 export type Route =
@@ -56,6 +57,7 @@ export function pathFor(route: Route | string) {
 export type AppContextValue = {
   data: AppData;
   refresh: () => void;
+  refreshAsync: () => Promise<void>;
   navigate: (route: Route | string) => void;
 };
 
@@ -63,7 +65,23 @@ export default function App() {
   const [route, setRoute] = useState<Route>(() => parseRoute(location.pathname));
   const [data, setData] = useState<AppData>(() => loadData());
 
+  // 异步刷新：从 Supabase 拉取最新数据
+  const refreshAsync = async () => {
+    const newData = await loadDataAsync();
+    setData(newData);
+  };
+
+  // 同步刷新（保持向后兼容）
   const refresh = () => setData(loadData());
+
+  // 首次加载时：导入种子数据 + 异步同步 Supabase 数据
+  useEffect(() => {
+    // 先导入种子数据（如果需要）
+    seedDatabase().then(() => {
+      // 然后刷新数据
+      refreshAsync();
+    });
+  }, []);
   const navigate = (target: Route | string) => {
     const path = pathFor(target);
     history.pushState(null, "", path);
@@ -83,7 +101,7 @@ export default function App() {
     };
   }, []);
 
-  const ctx = useMemo(() => ({ data, refresh, navigate }), [data]);
+  const ctx = useMemo(() => ({ data, refresh, refreshAsync, navigate }), [data]);
   const page =
     route.name === "home" ? <Home app={ctx} /> :
     route.name === "generate" ? <Generate app={ctx} /> :
